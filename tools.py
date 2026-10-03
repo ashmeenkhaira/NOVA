@@ -6,7 +6,7 @@ To add a tool:
 agent.py picks it up automatically - no changes needed there.
 """
 import json
-
+import ddgs
 
 # --- The tools: ordinary Python functions ----------------------------------
 
@@ -21,7 +21,16 @@ def get_current_time():
     now = datetime.now()
     return now.strftime("%A, %d %B %Y, %I:%M %p")
 
-
+def search_web(query):
+    """Search the web for current events or facts you don't know. Returns the top 5 results."""
+    results = ddgs.DDGS().text(query, max_results=5)
+    if results:
+        text=""
+        for res in results:
+            text+=f"Title: {res['title']}\nURL: {res['href']}\nSnippet: {res['body'][:300]}\n\n"
+        return text
+    else:
+        return "No results found."
 # --- The registry: tool name -> function + description for the model ------
 # The model never sees the functions above. It only sees the "description"
 # and "parameters", and decides from them when a tool is useful.
@@ -44,6 +53,17 @@ TOOLS = {
             "type": "object",
             "properties": {},
             "required": [],
+        },
+    },
+    "search_web": {
+        "function": search_web,
+        "description": "Search the web for current events or facts you don't know. Returns the top 5 results.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query, e.g. 'latest news'"},
+            },
+            "required": ["query"],
         },
     },
 
