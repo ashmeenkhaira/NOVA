@@ -1,0 +1,11 @@
+# Secrets - must never reach GitHub
+.env
+
+# The virtual environment - anyone can rebuild it with: py -m venv venv
+venv/
+
+# Python's cache of pre-compiled files - recreated automatically
+__pycache__/
+
+# Databases - they will hold personal details about you
+*.db
