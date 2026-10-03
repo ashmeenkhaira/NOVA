@@ -7,6 +7,7 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 import config
+import memory
 from agent import run_agent
 
 # Keep only the last 20 messages of each chat. Every message in the history is
@@ -68,6 +69,48 @@ async def reset(update, context):
     histories[chat_id] = []
     await update.message.reply_text("Conversation history has been reset.")
 
+
+async def list_memories(update, context):
+    """Runs on /memories: show every fact saved for this chat, with its id."""
+    # Always the sender's own chat - never config.MY_CHAT_ID, or anyone could
+    # read the owner's facts.
+    chat_id = update.effective_chat.id
+    facts = memory.get_facts(chat_id)
+
+    if not facts:
+        await update.message.reply_text("I don't remember anything about you yet.")
+        return
+
+    text = "What I remember about you:\n"
+    for fact_id, fact in facts:
+        text += f"#{fact_id}: {fact}\n"
+    text += "\nTo delete one, send /forget followed by its number, e.g. /forget 3"
+    await update.message.reply_text(text)
+
+
+async def forget(update, context):
+    """Runs on /forget <id>: delete one of this chat's facts."""
+    chat_id = update.effective_chat.id
+
+    # context.args is the list of words after the command:
+    # "/forget 3" gives ["3"], and "/forget" alone gives [].
+    if not context.args:
+        await update.message.reply_text("Which one? Send /forget followed by its number, e.g. /forget 3")
+        return
+
+    # The words arrive as text. Turn "3" into the number 3.
+    try:
+        fact_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(f"'{context.args[0]}' is not a number. Send /memories to see the numbers.")
+        return
+
+    if memory.delete_fact(chat_id, fact_id):
+        await update.message.reply_text(f"Forgotten fact #{fact_id}.")
+    else:
+        await update.message.reply_text(f"I have no fact #{fact_id} for you. Send /memories to see the list.")
+
+
 def main():
     # The Application is the library's engine: it polls Telegram and hands
     # each new message to the matching handler below.
@@ -77,7 +120,9 @@ def main():
     # filters.TEXT & ~filters.COMMAND means "text, but not a /command".
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("reset", reset))
-    
+    app.add_handler(CommandHandler("memories", list_memories))
+    app.add_handler(CommandHandler("forget", forget))
+
     print("Bot is running. Message it on Telegram. Press Ctrl+C to stop.")
     app.run_polling()
     
