@@ -1,0 +1,70 @@
+"""Every tool the agent can use lives here.
+
+To add a tool:
+  1. Write an ordinary Python function.
+  2. Add an entry for it to the TOOLS dictionary at the bottom.
+agent.py picks it up automatically - no changes needed there.
+"""
+import json
+
+
+# --- The tools: ordinary Python functions ----------------------------------
+
+def get_weather(city):
+    """Fake tool: always returns the same made-up weather."""
+    return f"It is 31 degrees Celsius and sunny in {city}."
+
+
+# --- The registry: tool name -> function + description for the model ------
+# The model never sees the functions above. It only sees the "description"
+# and "parameters", and decides from them when a tool is useful.
+TOOLS = {
+    "get_weather": {
+        "function": get_weather,
+        "description": "Get the current weather for a city.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "City name, e.g. Delhi"},
+            },
+            "required": ["city"],
+        },
+    },
+}
+
+
+# --- Helpers used by agent.py -----------------------------------------------
+
+def tool_menu():
+    """Build the list of tools in the format the API expects."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": tool["description"],
+                "parameters": tool["parameters"],
+            },
+        }
+        for name, tool in TOOLS.items()
+    ]
+
+
+def run_tool(name, arguments):
+    """Run the tool the model asked for and return its result as text.
+
+    arguments is JSON text from the model, e.g. '{"city": "Delhi"}'.
+    Errors are returned as text instead of crashing, so the model can
+    read what went wrong and tell the user.
+    """
+    if name not in TOOLS:
+        return f"Error: there is no tool called {name}"
+
+    try:
+        args = json.loads(arguments)
+        # **args unpacks the dictionary into named arguments:
+        # get_weather(**{"city": "Delhi"}) is the same as get_weather(city="Delhi")
+        result = TOOLS[name]["function"](**args)
+        return str(result)
+    except Exception as error:
+        return f"Error running {name}: {error}"
