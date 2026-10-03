@@ -85,7 +85,7 @@ def run_agent(history, chat_id):
 
         for call in reply.tool_calls:
             print(f"[debug] model asked to run {call.function.name}({call.function.arguments})")
-            result = tools.run_tool(call.function.name, call.function.arguments)
+            result = tools.run_tool(call.function.name, call.function.arguments, chat_id)
             print(f"[debug] tool returned: {result}")
 
             # tool_call_id links this result to the request it answers.

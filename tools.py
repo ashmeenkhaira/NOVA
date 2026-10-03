@@ -8,6 +8,8 @@ agent.py picks it up automatically - no changes needed there.
 import json
 import ddgs
 
+import memory
+
 # --- The tools: ordinary Python functions ----------------------------------
 
 def get_weather(city):
@@ -31,6 +33,29 @@ def search_web(query):
         return text
     else:
         return "No results found."
+
+
+# The two memory tools below need to know whose memory to use. chat_id is
+# filled in by run_tool from our own code - the model never supplies it.
+
+def remember_fact(chat_id, fact):
+    """Save one lasting fact about the user."""
+    fact_id = memory.add_fact(chat_id, fact)
+    return f"Saved as fact #{fact_id}."
+
+
+def recall_facts(chat_id):
+    """List every saved fact about the user, with its id."""
+    facts = memory.get_facts(chat_id)
+    if not facts:
+        return "No facts saved yet."
+
+    text = ""
+    for fact_id, fact in facts:
+        text += f"#{fact_id}: {fact}\n"
+    return text
+
+
 # --- The registry: tool name -> function + description for the model ------
 # The model never sees the functions above. It only sees the "description"
 # and "parameters", and decides from them when a tool is useful.
@@ -66,7 +91,36 @@ TOOLS = {
             "required": ["query"],
         },
     },
-
+    "remember_fact": {
+        "function": remember_fact,
+        "needs_chat_id": True,
+        "description": (
+            "Save a lasting fact about the user so you remember it in future conversations, "
+            "e.g. their name, where they live, preferences, goals, important people or dates. "
+            "Use it whenever the user shares something like that. Do not save small talk, "
+            "and do not save facts already listed in what you know about the user."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fact": {
+                    "type": "string",
+                    "description": "One short fact in third person, e.g. 'Loves cricket' or 'Sister is called Priya'",
+                },
+            },
+            "required": ["fact"],
+        },
+    },
+    "recall_facts": {
+        "function": recall_facts,
+        "needs_chat_id": True,
+        "description": "List every fact saved about the user, each with its id number.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 }
 
 
@@ -87,10 +141,12 @@ def tool_menu():
     ]
 
 
-def run_tool(name, arguments):
+def run_tool(name, arguments, chat_id):
     """Run the tool the model asked for and return its result as text.
 
     arguments is JSON text from the model, e.g. '{"city": "Delhi"}'.
+    chat_id says whose data the tool may use - it comes from our code
+    (Telegram or the terminal), never from the model.
     Errors are returned as text instead of crashing, so the model can
     read what went wrong and tell the user.
     """
@@ -99,6 +155,10 @@ def run_tool(name, arguments):
 
     try:
         args = json.loads(arguments)
+        # Tools marked needs_chat_id get the real chat_id added here. If the
+        # model tried to sneak in a chat_id of its own, this overwrites it.
+        if TOOLS[name].get("needs_chat_id"):
+            args["chat_id"] = chat_id
         # **args unpacks the dictionary into named arguments:
         # get_weather(**{"city": "Delhi"}) is the same as get_weather(city="Delhi")
         result = TOOLS[name]["function"](**args)
