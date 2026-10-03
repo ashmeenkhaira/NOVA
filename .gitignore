@@ -1,6 +1,11 @@
 # Secrets - must never reach GitHub
 .env
 
+# Google OAuth files: the app's credentials (downloaded from Google Cloud)
+# and the saved login token (created on first sign-in)
+credentials.json
+token.json
+
 # The virtual environment - anyone can rebuild it with: py -m venv venv
 venv/
 
