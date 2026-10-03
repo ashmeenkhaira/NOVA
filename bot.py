@@ -63,6 +63,10 @@ async def handle_message(update, context):
 
     await update.message.reply_text(answer)
 
+async def reset(update, context):
+    chat_id = update.effective_chat.id
+    histories[chat_id] = []
+    await update.message.reply_text("Conversation history has been reset.")
 
 def main():
     # The Application is the library's engine: it polls Telegram and hands
@@ -72,10 +76,10 @@ def main():
     app.add_handler(CommandHandler("start", start))
     # filters.TEXT & ~filters.COMMAND means "text, but not a /command".
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
+    app.add_handler(CommandHandler("reset", reset))
+    
     print("Bot is running. Message it on Telegram. Press Ctrl+C to stop.")
     app.run_polling()
-
-
+    
 if __name__ == "__main__":
     main()
