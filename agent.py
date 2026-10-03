@@ -29,9 +29,9 @@ TOOL_MENU = tools.tool_menu()
 
 SYSTEM_PROMPT = "You are OmniAgent, Always answer like a helpful assistant. Keep answers short."
 
-# The terminal chat's identity in memory.db. Telegram chat ids are large
-# numbers, so 0 never collides with a real chat.
-TERMINAL_CHAT_ID = 0
+# The terminal chat uses your own Telegram chat id, so the terminal and your
+# phone share the same remembered facts - both are you.
+TERMINAL_CHAT_ID = config.MY_CHAT_ID
 
 
 def build_system_prompt(chat_id):
