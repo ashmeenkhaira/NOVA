@@ -6,6 +6,7 @@ Run this file directly to chat in the terminal; bot.py will import run_agent.
 from openai import OpenAI
 
 import config
+import memory
 import tools
 
 # Groq accepts the same request format as OpenAI, so the openai library works
@@ -28,17 +29,35 @@ TOOL_MENU = tools.tool_menu()
 
 SYSTEM_PROMPT = "You are OmniAgent, Always answer like a helpful assistant. Keep answers short."
 
+# The terminal chat's identity in memory.db. Telegram chat ids are large
+# numbers, so 0 never collides with a real chat.
+TERMINAL_CHAT_ID = 0
 
-def run_agent(history):
+
+def build_system_prompt(chat_id):
+    """The base system prompt plus every fact remembered about this chat."""
+    facts = memory.get_facts(chat_id)
+    if not facts:
+        return SYSTEM_PROMPT
+
+    lines = ""
+    for fact_id, fact in facts:
+        lines += f"- {fact}\n"
+    print(f"[debug] loaded {len(facts)} fact(s) for chat {chat_id}")
+    return f"{SYSTEM_PROMPT}\n\nWhat you know about the user:\n{lines}"
+
+
+def run_agent(history, chat_id):
     """Answer the last message in history, running any tools the model asks for.
 
     history is the conversation so far: user and assistant messages only,
     with the new user message last. It is not changed - the caller decides
-    what to keep. Returns the answer as text.
+    what to keep. chat_id says whose remembered facts to load.
+    Returns the answer as text.
     """
-    # The system prompt is added fresh on every call, so trimming the history
-    # can never cut it off.
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+    # The system prompt is rebuilt on every call, so trimming the history can
+    # never cut it off, and newly saved facts show up straight away.
+    messages = [{"role": "system", "content": build_system_prompt(chat_id)}] + history
 
     # --- Round trip 1: conversation + menu go out --------------------------
     response = client.chat.completions.create(model=MODEL, messages=messages, tools=TOOL_MENU)
@@ -95,7 +114,7 @@ if __name__ == "__main__":
             break
 
         history.append({"role": "user", "content": question})
-        answer = run_agent(history)
+        answer = run_agent(history, TERMINAL_CHAT_ID)
         history.append({"role": "assistant", "content": answer})
 
         print("OmniAgent:", answer)

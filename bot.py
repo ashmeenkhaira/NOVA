@@ -41,7 +41,7 @@ async def handle_message(update, context):
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
     try:
-        answer = run_agent(history)
+        answer = run_agent(history, chat_id)
     except openai.RateLimitError:
         history.pop()  # forget the unanswered question
         await update.message.reply_text("I'm rate limited right now. Please try again in a minute.")
