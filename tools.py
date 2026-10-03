@@ -15,6 +15,13 @@ def get_weather(city):
     return f"It is 31 degrees Celsius and sunny in {city}."
 
 
+def get_current_time():
+    """Return the current date and time as text."""
+    from datetime import datetime
+    now = datetime.now()
+    return now.strftime("%A, %d %B %Y, %I:%M %p")
+
+
 # --- The registry: tool name -> function + description for the model ------
 # The model never sees the functions above. It only sees the "description"
 # and "parameters", and decides from them when a tool is useful.
@@ -30,6 +37,16 @@ TOOLS = {
             "required": ["city"],
         },
     },
+        "get_current_time": {
+        "function": get_current_time,
+        "description": "Get the current date and time.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+
 }
 
 
