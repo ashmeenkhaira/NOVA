@@ -1,4 +1,4 @@
-"""Read-only access to your Google Calendar.
+"""Access to your Google Calendar: read events, and create them (after approval).
 
 Not named calendar.py on purpose: that would hide Python's built-in
 calendar module from every file that imports it.
@@ -17,8 +17,9 @@ from googleapiclient.discovery import build
 
 import config
 
-# Read-only: this token can look at events but never change or delete them.
-SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+# calendar.events: see, create, edit and delete events - but not delete whole
+# calendars or change sharing. Writes only happen through approvals.py.
+SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
 # Saved after the first browser sign-in, so you are not asked every time.
 # It is a login pass for your calendar - it is in .gitignore.
@@ -30,6 +31,11 @@ def get_service():
     creds = None
     if TOKEN_FILE.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+
+    # A token approved for fewer permissions (e.g. the old read-only one) cannot
+    # do what we now need. Throw it away so the sign-in below asks again.
+    if creds and not creds.has_scopes(SCOPES):
+        creds = None
 
     if creds and creds.expired and creds.refresh_token:
         try:
@@ -90,6 +96,20 @@ def get_events(start_date, end_date):
     for event in events:
         text += describe_event(event) + "\n"
     return text
+
+
+def create_event(title, start, end):
+    """Create an event. start and end are local times like '2026-10-06T07:00'.
+
+    Never call this directly from a tool - it must go through approvals.py.
+    """
+    event = {
+        "summary": title,
+        "start": {"dateTime": datetime.fromisoformat(start).astimezone().isoformat()},
+        "end": {"dateTime": datetime.fromisoformat(end).astimezone().isoformat()},
+    }
+    created = get_service().events().insert(calendarId="primary", body=event).execute()
+    return f"added to your calendar: {describe_event(created)}"
 
 
 if __name__ == "__main__":

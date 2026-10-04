@@ -6,8 +6,11 @@ To add a tool:
 agent.py picks it up automatically - no changes needed there.
 """
 import json
+from datetime import datetime
+
 import ddgs
 
+import approvals
 import config
 import gcal
 import memory
@@ -65,6 +68,25 @@ def get_events(chat_id, start_date, end_date):
     if chat_id != config.MY_CHAT_ID:
         return "Calendar access is only available to the bot's owner."
     return gcal.get_events(start_date, end_date)
+
+
+def create_event(chat_id, title, start, end):
+    """Propose a new calendar event. Nothing is created until the user approves."""
+    if chat_id != config.MY_CHAT_ID:
+        return "Calendar access is only available to the bot's owner."
+
+    # Check the times now, so a bad proposal is rejected straight away instead
+    # of failing after the user has already said yes.
+    try:
+        starts = datetime.fromisoformat(start)
+        ends = datetime.fromisoformat(end)
+    except ValueError:
+        return "Error: start and end must look like 2026-10-06T07:00."
+    if ends <= starts:
+        return "Error: the end time must be after the start time."
+
+    description = f"Create event '{title}' on {starts:%a %d %b, %I:%M %p} - {ends:%I:%M %p}"
+    return approvals.propose(chat_id, description, gcal.create_event, title=title, start=start, end=end)
 
 
 # --- The registry: tool name -> function + description for the model ------
@@ -147,6 +169,24 @@ TOOLS = {
                 "end_date": {"type": "string", "description": "Last day, as YYYY-MM-DD (same as start_date for one day)"},
             },
             "required": ["start_date", "end_date"],
+        },
+    },
+    "create_event": {
+        "function": create_event,
+        "needs_chat_id": True,
+        "description": (
+            "Propose adding an event to the user's Google Calendar. The event is NOT created "
+            "until the user approves, so never say it has been added. If no end time is given, "
+            "make it one hour long. If you do not know today's date, call get_current_time first."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Short event title, e.g. 'Gym'"},
+                "start": {"type": "string", "description": "Start in local time, as YYYY-MM-DDTHH:MM"},
+                "end": {"type": "string", "description": "End in local time, as YYYY-MM-DDTHH:MM"},
+            },
+            "required": ["title", "start", "end"],
         },
     },
 }
