@@ -43,3 +43,6 @@ try:
     MY_CHAT_ID = int(require("MY_CHAT_ID"))
 except ValueError:
     raise RuntimeError(f"MY_CHAT_ID in {ENV_FILE} must be a whole number, e.g. MY_CHAT_ID=5551234")
+
+# Path to the Google OAuth client file, relative to the project folder.
+GOOGLE_CREDENTIALS_FILE = Path(__file__).parent / require("GOOGLE_CREDENTIALS_FILE")

@@ -8,6 +8,8 @@ agent.py picks it up automatically - no changes needed there.
 import json
 import ddgs
 
+import config
+import gcal
 import memory
 
 # --- The tools: ordinary Python functions ----------------------------------
@@ -54,6 +56,15 @@ def recall_facts(chat_id):
     for fact_id, fact in facts:
         text += f"#{fact_id}: {fact}\n"
     return text
+
+
+def get_events(chat_id, start_date, end_date):
+    """Read the owner's Google Calendar between two dates."""
+    # The calendar token belongs to the bot's owner, so only the owner's chat
+    # may use it - otherwise anyone messaging the bot could read your schedule.
+    if chat_id != config.MY_CHAT_ID:
+        return "Calendar access is only available to the bot's owner."
+    return gcal.get_events(start_date, end_date)
 
 
 # --- The registry: tool name -> function + description for the model ------
@@ -119,6 +130,23 @@ TOOLS = {
             "type": "object",
             "properties": {},
             "required": [],
+        },
+    },
+    "get_events": {
+        "function": get_events,
+        "needs_chat_id": True,
+        "description": (
+            "Get the user's Google Calendar events between two dates (inclusive). "
+            "Use it for questions about their schedule, meetings, or free time. "
+            "If you do not know today's date, call get_current_time first."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_date": {"type": "string", "description": "First day, as YYYY-MM-DD"},
+                "end_date": {"type": "string", "description": "Last day, as YYYY-MM-DD (same as start_date for one day)"},
+            },
+            "required": ["start_date", "end_date"],
         },
     },
 }
