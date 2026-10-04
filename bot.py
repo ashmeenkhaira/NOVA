@@ -1,7 +1,9 @@
-"""OmniAgent on Telegram: every text message goes through the agent loop.
+"""NOVA on Telegram: every text message goes through the agent loop.
 
 Run with: python bot.py   (stop with Ctrl+C)
 """
+import asyncio
+
 import openai
 from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -23,7 +25,12 @@ histories = {}
 
 async def start(update, context):
     """Runs when someone sends /start - the first message when a bot is opened."""
-    await update.message.reply_text("Hello! I'm OmniAgent. Ask me anything.")
+    await update.message.reply_text(
+        "Hello! I'm NOVA. Ask me anything.\n\n"
+        "/memories - what I remember about you\n"
+        "/forget <number> - forget one fact\n"
+        "/reset - clear this conversation"
+    )
 
 
 async def handle_message(update, context):
@@ -53,7 +60,9 @@ async def handle_message(update, context):
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
     try:
-        answer = run_agent(history, chat_id)
+        # run_agent is slow (network calls) and not async. Running it in a
+        # worker thread lets the bot keep answering other messages meanwhile.
+        answer = await asyncio.to_thread(run_agent, history, chat_id)
     except openai.RateLimitError:
         history.pop()  # forget the unanswered question
         await update.message.reply_text("I'm rate limited right now. Please try again in a minute.")
@@ -82,6 +91,8 @@ async def handle_message(update, context):
 async def reset(update, context):
     chat_id = update.effective_chat.id
     histories[chat_id] = []
+    # Also drop any write action still waiting for a "yes".
+    approvals.pending.pop(chat_id, None)
     await update.message.reply_text("Conversation history has been reset.")
 
 
@@ -129,7 +140,9 @@ async def forget(update, context):
 def main():
     # The Application is the library's engine: it polls Telegram and hands
     # each new message to the matching handler below.
-    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+    # concurrent_updates: handle a new message (e.g. /memories) while another
+    # one is still waiting for the agent, instead of queueing behind it.
+    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).concurrent_updates(True).build()
 
     app.add_handler(CommandHandler("start", start))
     # filters.TEXT & ~filters.COMMAND means "text, but not a /command".

@@ -28,7 +28,7 @@ MAX_ROUND_TRIPS = 5
 # The menu of tools, built from the registry in tools.py.
 TOOL_MENU = tools.tool_menu()
 
-SYSTEM_PROMPT = "You are OmniAgent, Always answer like a helpful assistant. Keep answers short."
+SYSTEM_PROMPT = "You are NOVA, a helpful personal assistant. Keep answers short."
 
 # The terminal chat uses your own Telegram chat id, so the terminal and your
 # phone share the same remembered facts - both are you.
@@ -107,7 +107,7 @@ def run_agent(history, chat_id):
 # not when another file imports it (import agent).
 if __name__ == "__main__":
     history = []
-    print("Chat with OmniAgent. Type 'quit' to stop.")
+    print("Chat with NOVA. Type 'quit' to stop.")
 
     while True:
         question = input("You: ")
@@ -119,7 +119,7 @@ if __name__ == "__main__":
         if outcome is not None:
             history.append({"role": "user", "content": question})
             history.append({"role": "assistant", "content": outcome})
-            print("OmniAgent:", outcome)
+            print("NOVA:", outcome)
             continue
 
         history.append({"role": "user", "content": question})
@@ -127,4 +127,4 @@ if __name__ == "__main__":
         answer += approvals.approval_prompt(TERMINAL_CHAT_ID)
         history.append({"role": "assistant", "content": answer})
 
-        print("OmniAgent:", answer)
+        print("NOVA:", answer)

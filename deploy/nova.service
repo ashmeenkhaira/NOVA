@@ -1,0 +1,29 @@
+# systemd service for NOVA: keeps bot.py running on a Linux server, restarts it
+# if it crashes, and starts it again after a reboot.
+#
+# Install (see DEPLOY.md):
+#   sudo cp deploy/nova.service /etc/systemd/system/nova.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now nova
+#
+# Replace YOUR_USER with your Linux user name (run: whoami).
+
+[Unit]
+Description=NOVA Telegram assistant
+# Wait for the network before starting - the bot needs Telegram and Groq.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/nova
+ExecStart=/home/YOUR_USER/nova/venv/bin/python bot.py
+# No browser on a server: an expired Google login reports an error instead of hanging.
+Environment=NOVA_HEADLESS=1
+# Print logs straight away instead of buffering them (see: journalctl -u nova -f).
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
