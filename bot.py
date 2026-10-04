@@ -6,6 +6,7 @@ import openai
 from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
+import approvals
 import config
 import memory
 from agent import run_agent
@@ -36,6 +37,16 @@ async def handle_message(update, context):
         histories[chat_id] = []
     history = histories[chat_id]
 
+    # Is a write action waiting for approval? Then this message is the answer
+    # to it. Code decides here - the model is not asked.
+    outcome = approvals.handle_reply(chat_id, text)
+    if outcome is not None:
+        history.append({"role": "user", "content": text})
+        history.append({"role": "assistant", "content": outcome})
+        histories[chat_id] = history[-MAX_HISTORY:]
+        await update.message.reply_text(outcome)
+        return
+
     history.append({"role": "user", "content": text})
 
     # Shows "typing..." at the top of the chat while the agent thinks.
@@ -56,6 +67,10 @@ async def handle_message(update, context):
     # Telegram refuses to send an empty message.
     if not answer:
         answer = "(I had nothing to say - try asking another way.)"
+
+    # If a tool proposed a write action, show exactly what will run - written
+    # by our code, so the model cannot misdescribe it.
+    answer += approvals.approval_prompt(chat_id)
 
     history.append({"role": "assistant", "content": answer})
 

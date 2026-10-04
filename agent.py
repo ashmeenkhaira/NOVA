@@ -5,6 +5,7 @@ Run this file directly to chat in the terminal; bot.py will import run_agent.
 """
 from openai import OpenAI
 
+import approvals
 import config
 import memory
 import tools
@@ -113,8 +114,17 @@ if __name__ == "__main__":
         if question.strip().lower() == "quit":
             break
 
+        # A write action waiting for approval? This message answers it.
+        outcome = approvals.handle_reply(TERMINAL_CHAT_ID, question)
+        if outcome is not None:
+            history.append({"role": "user", "content": question})
+            history.append({"role": "assistant", "content": outcome})
+            print("OmniAgent:", outcome)
+            continue
+
         history.append({"role": "user", "content": question})
         answer = run_agent(history, TERMINAL_CHAT_ID)
+        answer += approvals.approval_prompt(TERMINAL_CHAT_ID)
         history.append({"role": "assistant", "content": answer})
 
         print("OmniAgent:", answer)
