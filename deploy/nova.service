@@ -20,6 +20,9 @@ WorkingDirectory=/home/YOUR_USER/nova
 ExecStart=/home/YOUR_USER/nova/venv/bin/python bot.py
 # No browser on a server: an expired Google login reports an error instead of hanging.
 Environment=NOVA_HEADLESS=1
+# Cloud servers run on UTC. The bot's times ("tomorrow at 7am", event times)
+# must be in YOUR timezone - change this if you are not in India.
+Environment=TZ=Asia/Kolkata
 # Print logs straight away instead of buffering them (see: journalctl -u nova -f).
 Environment=PYTHONUNBUFFERED=1
 Restart=always
