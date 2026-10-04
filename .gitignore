@@ -12,5 +12,8 @@ venv/
 # Python's cache of pre-compiled files - recreated automatically
 __pycache__/
 
+# pytest's cache - recreated on every test run
+.pytest_cache/
+
 # Databases - they will hold personal details about you
 *.db
