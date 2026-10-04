@@ -3,57 +3,19 @@
 Not named calendar.py on purpose: that would hide Python's built-in
 calendar module from every file that imports it.
 
-Run this file directly to sign in and see tomorrow's events:
+Run this file directly to see tomorrow's events (signs in if needed):
     python gcal.py
 """
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
-from google.auth.exceptions import RefreshError
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-import config
-
-# calendar.events: see, create, edit and delete events - but not delete whole
-# calendars or change sharing. Writes only happen through approvals.py.
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
-
-# Saved after the first browser sign-in, so you are not asked every time.
-# It is a login pass for your calendar - it is in .gitignore.
-TOKEN_FILE = Path(__file__).parent / "token.json"
+import google_auth
 
 
 def get_service():
-    """Return a connection to the Calendar API, signing in if needed."""
-    creds = None
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-
-    # A token approved for fewer permissions (e.g. the old read-only one) cannot
-    # do what we now need. Throw it away so the sign-in below asks again.
-    if creds and not creds.has_scopes(SCOPES):
-        creds = None
-
-    if creds and creds.expired and creds.refresh_token:
-        try:
-            # The token lasts about an hour; refreshing gets a new one silently.
-            creds.refresh(Request())
-        except RefreshError:
-            # Google refused - e.g. the 7-day limit for apps in Testing mode.
-            # Throw the old token away and sign in again below.
-            creds = None
-
-    if not creds or not creds.valid:
-        # Opens your browser at Google's sign-in page. After you approve,
-        # Google sends the token back to a temporary local web server.
-        flow = InstalledAppFlow.from_client_secrets_file(str(config.GOOGLE_CREDENTIALS_FILE), SCOPES)
-        creds = flow.run_local_server(port=0)
-
-    TOKEN_FILE.write_text(creds.to_json())
-    return build("calendar", "v3", credentials=creds)
+    """Return a connection to the Calendar API. Sign-in lives in google_auth.py."""
+    return build("calendar", "v3", credentials=google_auth.get_credentials())
 
 
 def describe_event(event):
