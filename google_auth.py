@@ -1,12 +1,16 @@
-"""One Google sign-in shared by every Google service the bot uses.
+"""Google sign-in, one account per chat.
 
-gcal.py and gmail.py both get their credentials from here, so there is one
-token.json and you approve all permissions together.
+Tokens live in the database (tokens.py), keyed by chat_id, so each person can
+connect their own Google account. gcal.py and gmail.py ask here for the
+credentials belonging to whoever is asking.
 
-Run this file directly to sign in (or re-sign-in after adding a scope):
-    python google_auth.py
+Sign in on this machine (opens a browser):
+    python google_auth.py              # connects the owner's chat
+    python google_auth.py 5551234      # connects someone else's chat id
 """
+import json
 import os
+import sys
 from pathlib import Path
 
 from google.auth.exceptions import RefreshError
@@ -15,6 +19,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 import config
+import tokens
 
 # Every permission the bot needs, in one place:
 #   calendar.events - see, create, edit and delete events (writes go through approvals.py)
@@ -27,49 +32,89 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.compose",
 ]
 
-# Saved after the first browser sign-in, so you are not asked every time.
-# It is a login pass for your Google account - it is in .gitignore.
-TOKEN_FILE = Path(__file__).parent / "token.json"
+# The old single-user token file. Still read once, to carry an existing
+# sign-in into the database; new tokens are never written here.
+LEGACY_TOKEN_FILE = Path(__file__).parent / "token.json"
 
 
-def get_credentials():
-    """Return valid Google credentials, signing in through the browser if needed."""
-    creds = None
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+class NotConnected(Exception):
+    """This chat has no usable Google account - it needs to connect one."""
 
-    # A token approved for fewer permissions cannot do everything we now need.
-    # Throw it away so the sign-in below asks again.
-    if creds and not creds.has_scopes(SCOPES):
-        creds = None
 
-    if creds and creds.expired and creds.refresh_token:
+def _import_legacy_token(chat_id):
+    """One-time: carry the old token.json into the database for the owner."""
+    if chat_id != config.MY_CHAT_ID or not LEGACY_TOKEN_FILE.exists():
+        return
+    if tokens.has_token(chat_id):
+        return
+    tokens.save_token(chat_id, LEGACY_TOKEN_FILE.read_text())
+    print(f"[info] imported token.json into the database for chat {chat_id}")
+
+
+def get_credentials(chat_id):
+    """Valid Google credentials for this chat.
+
+    Raises NotConnected if this chat has no account linked, if the saved token
+    does not cover the permissions we need, or if Google refuses to renew it
+    (e.g. the 7-day limit for apps in Testing mode). Callers do not need to
+    handle that themselves - run_tool turns it into a friendly message.
+    """
+    _import_legacy_token(chat_id)
+
+    raw = tokens.get_token(chat_id)
+    if raw is None:
+        raise NotConnected(f"chat {chat_id} has no Google account linked")
+
+    # Load WITHOUT passing SCOPES. Passing them overwrites the credential's
+    # scope list with what we are asking for, which would make the check below
+    # always pass - it has to read the scopes Google actually granted.
+    creds = Credentials.from_authorized_user_info(json.loads(raw))
+
+    # A token approved for fewer permissions cannot do everything we need.
+    if not creds.has_scopes(SCOPES):
+        tokens.delete_token(chat_id)
+        raise NotConnected("the linked account is missing some permissions")
+
+    if creds.expired and creds.refresh_token:
         try:
             # The token lasts about an hour; refreshing gets a new one silently.
             creds.refresh(Request())
+            tokens.save_token(chat_id, creds.to_json())
         except RefreshError:
-            # Google refused - e.g. the 7-day limit for apps in Testing mode.
-            creds = None
+            # Google refused - the sign-in has to be done again.
+            tokens.delete_token(chat_id)
+            raise NotConnected("the Google sign-in expired")
 
-    if not creds or not creds.valid:
-        # On a server there is no browser, so signing in would wait forever.
-        # The service file sets NOVA_HEADLESS=1; fail with instructions instead.
-        if os.environ.get("NOVA_HEADLESS"):
-            raise RuntimeError(
-                "Google sign-in needed (it expires every 7 days in Testing mode). "
-                "On your laptop run: python google_auth.py - then copy token.json to the server."
-            )
-        # Opens your browser at Google's sign-in page. After you approve,
-        # Google sends the token back to a temporary local web server.
-        flow = InstalledAppFlow.from_client_secrets_file(str(config.GOOGLE_CREDENTIALS_FILE), SCOPES)
-        creds = flow.run_local_server(port=0)
+    if not creds.valid:
+        raise NotConnected("the saved Google token is not usable")
+    return creds
 
-    TOKEN_FILE.write_text(creds.to_json())
+
+def sign_in(chat_id):
+    """Sign in through a browser ON THIS MACHINE and save the token for chat_id.
+
+    Only works where a browser is available, so today it is the owner linking
+    an account from their own laptop. A hosted sign-in flow would let other
+    people connect from their own device.
+    """
+    if os.environ.get("NOVA_HEADLESS"):
+        raise RuntimeError(
+            "No browser on this machine. Run 'python google_auth.py' on your laptop instead."
+        )
+
+    # Opens your browser at Google's sign-in page. After you approve, Google
+    # sends the token back to a temporary local web server.
+    flow = InstalledAppFlow.from_client_secrets_file(str(config.GOOGLE_CREDENTIALS_FILE), SCOPES)
+    creds = flow.run_local_server(port=0)
+    tokens.save_token(chat_id, creds.to_json())
     return creds
 
 
 if __name__ == "__main__":
-    creds = get_credentials()
-    print("Signed in. Permissions granted:")
+    # Optional argument: whose chat to link. Defaults to the owner.
+    chat_id = int(sys.argv[1]) if len(sys.argv) > 1 else config.MY_CHAT_ID
+
+    creds = sign_in(chat_id)
+    print(f"Signed in and saved for chat {chat_id}. Permissions granted:")
     for scope in creds.scopes:
         print("  ", scope)

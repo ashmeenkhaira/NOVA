@@ -11,10 +11,17 @@ from datetime import datetime
 import ddgs
 
 import approvals
-import config
 import gcal
 import gmail
+import google_auth
 import memory
+import tokens
+
+# Shown whenever a Google tool is used by a chat with no linked account.
+NOT_CONNECTED = (
+    "No Google account is linked to this chat, so I cannot read the calendar or email. "
+    "Send /connect to link one."
+)
 
 # --- The tools: ordinary Python functions ----------------------------------
 
@@ -63,18 +70,17 @@ def recall_facts(chat_id):
 
 
 def get_events(chat_id, start_date, end_date):
-    """Read the owner's Google Calendar between two dates."""
-    # The calendar token belongs to the bot's owner, so only the owner's chat
-    # may use it - otherwise anyone messaging the bot could read your schedule.
-    if chat_id != config.MY_CHAT_ID:
-        return "Calendar access is only available to the bot's owner."
-    return gcal.get_events(start_date, end_date)
+    """Read this chat's linked Google Calendar between two dates."""
+    return gcal.get_events(chat_id, start_date, end_date)
 
 
 def create_event(chat_id, title, start, end):
     """Propose a new calendar event. Nothing is created until the user approves."""
-    if chat_id != config.MY_CHAT_ID:
-        return "Calendar access is only available to the bot's owner."
+    # The event is only created later, after approval, so check now that there
+    # is an account to create it in. Otherwise the failure would surface after
+    # the user has already said yes.
+    if not tokens.has_token(chat_id):
+        return NOT_CONNECTED
 
     # Check the times now, so a bad proposal is rejected straight away instead
     # of failing after the user has already said yes.
@@ -87,29 +93,25 @@ def create_event(chat_id, title, start, end):
         return "Error: the end time must be after the start time."
 
     description = f"Create event '{title}' on {starts:%a %d %b, %I:%M %p} - {ends:%I:%M %p}"
-    return approvals.propose(chat_id, description, gcal.create_event, title=title, start=start, end=end)
+    return approvals.propose(
+        chat_id, description, gcal.create_event,
+        chat_id=chat_id, title=title, start=start, end=end,
+    )
 
 
 def search_emails(chat_id, query):
-    """Search the owner's Gmail."""
-    # The Gmail token belongs to the bot's owner - nobody else may read it.
-    if chat_id != config.MY_CHAT_ID:
-        return "Email access is only available to the bot's owner."
-    return gmail.search_emails(query)
+    """Search this chat's linked Gmail."""
+    return gmail.search_emails(chat_id, query)
 
 
 def read_email(chat_id, email_id):
-    """Read one of the owner's emails in full."""
-    if chat_id != config.MY_CHAT_ID:
-        return "Email access is only available to the bot's owner."
-    return gmail.read_email(email_id)
+    """Read one email in full from this chat's linked Gmail."""
+    return gmail.read_email(chat_id, email_id)
 
 
 def create_draft(chat_id, to, subject, body):
-    """Save a draft email in the owner's Gmail. Never sends."""
-    if chat_id != config.MY_CHAT_ID:
-        return "Email access is only available to the bot's owner."
-    return gmail.create_draft(to, subject, body)
+    """Save a draft in this chat's linked Gmail. Never sends."""
+    return gmail.create_draft(chat_id, to, subject, body)
 
 
 # --- The registry: tool name -> function + description for the model ------
@@ -303,5 +305,9 @@ def run_tool(name, arguments, chat_id):
         # get_weather(**{"city": "Delhi"}) is the same as get_weather(city="Delhi")
         result = TOOLS[name]["function"](**args)
         return str(result)
+    except google_auth.NotConnected:
+        # One place handles "this chat has no Google account", instead of every
+        # Google tool checking for itself.
+        return NOT_CONNECTED
     except Exception as error:
         return f"Error running {name}: {error}"

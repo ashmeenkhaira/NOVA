@@ -9,6 +9,7 @@ from email.message import EmailMessage
 
 from googleapiclient.discovery import build
 
+import config
 import google_auth
 
 MAX_RESULTS = 5          # emails per search - each one costs tokens
@@ -23,9 +24,12 @@ UNTRUSTED_NOTE = (
 )
 
 
-def get_service():
-    """Return a connection to the Gmail API. Sign-in lives in google_auth.py."""
-    return build("gmail", "v1", credentials=google_auth.get_credentials())
+def get_service(chat_id):
+    """A connection to the Gmail API, as whoever this chat has linked.
+
+    Raises google_auth.NotConnected if that chat has no usable account.
+    """
+    return build("gmail", "v1", credentials=google_auth.get_credentials(chat_id))
 
 
 def get_header(message, name):
@@ -55,9 +59,9 @@ def find_plain_text(part):
     return None
 
 
-def search_emails(query):
+def search_emails(chat_id, query):
     """Search Gmail (same syntax as Gmail's search box) and summarise the matches."""
-    service = get_service()
+    service = get_service(chat_id)
     result = service.users().messages().list(userId="me", q=query, maxResults=MAX_RESULTS).execute()
     found = result.get("messages", [])
     if not found:
@@ -79,9 +83,9 @@ def search_emails(query):
     return text
 
 
-def read_email(email_id):
+def read_email(chat_id, email_id):
     """Return one email in full (cut to MAX_BODY_CHARS)."""
-    message = get_service().users().messages().get(userId="me", id=email_id, format="full").execute()
+    message = get_service(chat_id).users().messages().get(userId="me", id=email_id, format="full").execute()
 
     body = find_plain_text(message["payload"])
     if not body:
@@ -99,7 +103,7 @@ def read_email(email_id):
     )
 
 
-def create_draft(to, subject, body):
+def create_draft(chat_id, to, subject, body):
     """Save an email in Gmail's Drafts folder. It is NOT sent."""
     # EmailMessage builds a correctly formatted email; Gmail wants it base64-encoded.
     message = EmailMessage()
@@ -108,9 +112,9 @@ def create_draft(to, subject, body):
     message.set_content(body)
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
-    get_service().users().drafts().create(userId="me", body={"message": {"raw": raw}}).execute()
+    get_service(chat_id).users().drafts().create(userId="me", body={"message": {"raw": raw}}).execute()
     return f"Draft to {to} saved in Gmail Drafts (not sent). Subject: {subject}"
 
 
 if __name__ == "__main__":
-    print(search_emails("in:inbox"))
+    print(search_emails(config.MY_CHAT_ID, "in:inbox"))

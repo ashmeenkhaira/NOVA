@@ -11,6 +11,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import approvals
 import config
 import memory
+import tokens
 from agent import run_agent
 
 # Keep only the last 20 messages of each chat. Every message in the history is
@@ -27,10 +28,45 @@ async def start(update, context):
     """Runs when someone sends /start - the first message when a bot is opened."""
     await update.message.reply_text(
         "Hello! I'm NOVA. Ask me anything.\n\n"
+        "/connect - link a Google account (calendar and email)\n"
+        "/disconnect - unlink it\n"
         "/memories - what I remember about you\n"
         "/forget <number> - forget one fact\n"
         "/reset - clear this conversation"
     )
+
+
+async def connect(update, context):
+    """Runs on /connect: link a Google account to this chat."""
+    chat_id = update.effective_chat.id
+
+    if tokens.has_token(chat_id):
+        await update.message.reply_text(
+            "A Google account is already linked to this chat. Send /disconnect to unlink it."
+        )
+        return
+
+    # Signing in needs a browser on the machine running the code, so for now
+    # the owner links accounts from their own laptop. A hosted sign-in page
+    # would let people connect from their own device.
+    await update.message.reply_text(
+        "No Google account is linked to this chat yet.\n\n"
+        f"Your chat id is {chat_id}.\n\n"
+        "Send that id to the bot's owner, who links it by running:\n"
+        f"python google_auth.py {chat_id}"
+    )
+
+
+async def disconnect(update, context):
+    """Runs on /disconnect: forget this chat's Google account."""
+    chat_id = update.effective_chat.id
+
+    if tokens.delete_token(chat_id):
+        await update.message.reply_text(
+            "Google account unlinked. I can no longer read your calendar or email."
+        )
+    else:
+        await update.message.reply_text("No Google account was linked to this chat.")
 
 
 async def handle_message(update, context):
@@ -150,6 +186,8 @@ def main():
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("memories", list_memories))
     app.add_handler(CommandHandler("forget", forget))
+    app.add_handler(CommandHandler("connect", connect))
+    app.add_handler(CommandHandler("disconnect", disconnect))
 
     print("Bot is running. Message it on Telegram. Press Ctrl+C to stop.")
     app.run_polling()

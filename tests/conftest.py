@@ -25,9 +25,18 @@ FRIEND = 222
 
 @pytest.fixture(autouse=True)
 def temp_database(tmp_path, monkeypatch):
-    """Every test gets its own empty database file."""
+    """Every test gets its own empty database, and never sees the real token.json."""
+    import google_auth
     import memory
+    import tokens
+
+    # memory.py and tokens.py each point at the same file, so patch both.
     monkeypatch.setattr(memory, "DB_FILE", tmp_path / "test.db")
+    monkeypatch.setattr(tokens, "DB_FILE", tmp_path / "test.db")
+
+    # Otherwise the owner's real token.json would be imported into the test
+    # database and some tests would pass for the wrong reason.
+    monkeypatch.setattr(google_auth, "LEGACY_TOKEN_FILE", tmp_path / "no-token.json")
 
 
 @pytest.fixture(autouse=True)

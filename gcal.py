@@ -10,12 +10,16 @@ from datetime import date, datetime, timedelta
 
 from googleapiclient.discovery import build
 
+import config
 import google_auth
 
 
-def get_service():
-    """Return a connection to the Calendar API. Sign-in lives in google_auth.py."""
-    return build("calendar", "v3", credentials=google_auth.get_credentials())
+def get_service(chat_id):
+    """A connection to the Calendar API, as whoever this chat has linked.
+
+    Raises google_auth.NotConnected if that chat has no usable account.
+    """
+    return build("calendar", "v3", credentials=google_auth.get_credentials(chat_id))
 
 
 def describe_event(event):
@@ -34,14 +38,14 @@ def describe_event(event):
     return f"{starts:%a %d %b, %I:%M %p} - {ends:%I:%M %p}: {title}"
 
 
-def get_events(start_date, end_date):
+def get_events(chat_id, start_date, end_date):
     """Return events from start_date to end_date (both 'YYYY-MM-DD', inclusive) as text."""
     # Google needs exact moments with a timezone. .astimezone() uses your
     # laptop's timezone, so "2026-10-05" means midnight in your local time.
     time_min = datetime.fromisoformat(start_date).astimezone()
     time_max = (datetime.fromisoformat(end_date) + timedelta(days=1)).astimezone()
 
-    result = get_service().events().list(
+    result = get_service(chat_id).events().list(
         calendarId="primary",            # your main calendar
         timeMin=time_min.isoformat(),
         timeMax=time_max.isoformat(),
@@ -60,7 +64,7 @@ def get_events(start_date, end_date):
     return text
 
 
-def create_event(title, start, end):
+def create_event(chat_id, title, start, end):
     """Create an event. start and end are local times like '2026-10-06T07:00'.
 
     Never call this directly from a tool - it must go through approvals.py.
@@ -70,11 +74,11 @@ def create_event(title, start, end):
         "start": {"dateTime": datetime.fromisoformat(start).astimezone().isoformat()},
         "end": {"dateTime": datetime.fromisoformat(end).astimezone().isoformat()},
     }
-    created = get_service().events().insert(calendarId="primary", body=event).execute()
+    created = get_service(chat_id).events().insert(calendarId="primary", body=event).execute()
     return f"added to your calendar: {describe_event(created)}"
 
 
 if __name__ == "__main__":
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     print(f"Events for tomorrow ({tomorrow}):")
-    print(get_events(tomorrow, tomorrow))
+    print(get_events(config.MY_CHAT_ID, tomorrow, tomorrow))

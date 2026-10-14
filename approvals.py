@@ -13,11 +13,15 @@ pending = {}
 APPROVE_WORDS = ("yes", "y")
 
 
-def propose(chat_id, description, function, **args):
+def propose(chat_id, description, function, /, **args):
     """Store an action to run later, once the user approves. Returns text for the model.
 
     **args collects any named arguments into a dictionary, e.g.
     propose(1, "...", f, title="Gym") gives args == {"title": "Gym"}.
+
+    The / marks the first three as positional-only, so an action that itself
+    takes a chat_id argument (like gcal.create_event) can be passed
+    chat_id=... without colliding with this function's own chat_id.
     """
     pending[chat_id] = {"description": description, "function": function, "args": args}
     return (

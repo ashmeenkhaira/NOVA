@@ -7,6 +7,7 @@ import pytest
 import gcal
 import gmail
 import google_auth
+from conftest import OWNER
 
 
 def b64(text):
@@ -15,11 +16,11 @@ def b64(text):
 
 # --- Sign-in on a server ------------------------------------------------------
 
-def test_headless_server_fails_instead_of_waiting_for_a_browser(tmp_path, monkeypatch):
-    monkeypatch.setattr(google_auth, "TOKEN_FILE", tmp_path / "no-token.json")
+def test_headless_server_refuses_browser_sign_in(monkeypatch):
+    """On a server there is no browser, so sign_in must fail fast, not hang."""
     monkeypatch.setenv("NOVA_HEADLESS", "1")
     with pytest.raises(RuntimeError, match="python google_auth.py"):
-        google_auth.get_credentials()
+        google_auth.sign_in(OWNER)
 
 
 # --- Calendar formatting ----------------------------------------------------
@@ -99,16 +100,16 @@ def test_read_email_is_labelled_untrusted_and_cut_short(monkeypatch):
         "headers": [{"name": "From", "value": "news@x.com"}],
         "body": {"data": b64("word " * 2000)},
     }}
-    monkeypatch.setattr(gmail, "get_service", lambda: FakeGmail(message))
-    text = gmail.read_email("id1")
+    monkeypatch.setattr(gmail, "get_service", lambda chat_id: FakeGmail(message))
+    text = gmail.read_email(OWNER, "id1")
     assert text.startswith(gmail.UNTRUSTED_NOTE)
     assert text.endswith("[... email cut short ...]")
 
 
 def test_create_draft_builds_a_valid_email(monkeypatch):
     fake = FakeGmail()
-    monkeypatch.setattr(gmail, "get_service", lambda: fake)
-    result = gmail.create_draft("prof@uni.edu", "Late submission", "Sorry, running late.")
+    monkeypatch.setattr(gmail, "get_service", lambda chat_id: fake)
+    result = gmail.create_draft(OWNER, "prof@uni.edu", "Late submission", "Sorry, running late.")
     assert "not sent" in result
     raw = fake.drafts_saved[0]["message"]["raw"]
     sent = email.message_from_bytes(base64.urlsafe_b64decode(raw))

@@ -1,5 +1,6 @@
 import approvals
 import memory
+import tokens
 import tools
 from conftest import FRIEND, OWNER
 
@@ -28,22 +29,40 @@ def test_recall_facts_lists_ids():
     assert tools.run_tool("recall_facts", "{}", OWNER) == f"#{fact_id}: Loves cricket\n"
 
 
-def test_owner_only_tools_refuse_others():
-    assert "only available to the bot's owner" in tools.run_tool("get_events", '{"start_date": "2026-10-05", "end_date": "2026-10-05"}', FRIEND)
-    assert "only available to the bot's owner" in tools.run_tool("create_event", EVENT, FRIEND)
-    assert "only available to the bot's owner" in tools.run_tool("search_emails", '{"query": "x"}', FRIEND)
-    assert "only available to the bot's owner" in tools.run_tool("read_email", '{"email_id": "x"}', FRIEND)
-    assert "only available to the bot's owner" in tools.run_tool("create_draft", '{"to": "a@b.c", "subject": "s", "body": "b"}', FRIEND)
+GOOGLE_CALLS = [
+    ("get_events", '{"start_date": "2026-10-05", "end_date": "2026-10-05"}'),
+    ("create_event", EVENT),
+    ("search_emails", '{"query": "x"}'),
+    ("read_email", '{"email_id": "x"}'),
+    ("create_draft", '{"to": "a@b.c", "subject": "s", "body": "b"}'),
+]
+
+
+def test_google_tools_refuse_a_chat_with_no_linked_account():
+    for name, arguments in GOOGLE_CALLS:
+        assert tools.run_tool(name, arguments, FRIEND) == tools.NOT_CONNECTED
+
+
+def test_the_owner_is_not_special_without_a_linked_account():
+    """Access follows the linked account, not who owns the bot."""
+    for name, arguments in GOOGLE_CALLS:
+        assert tools.run_tool(name, arguments, OWNER) == tools.NOT_CONNECTED
 
 
 def test_create_event_rejects_bad_times():
+    tokens.save_token(OWNER, '{"token": "fake"}')
     assert tools.run_tool("create_event", '{"title": "Gym", "start": "tomorrow", "end": "2026-10-06T08:00"}', OWNER).startswith("Error")
     assert tools.run_tool("create_event", '{"title": "Gym", "start": "2026-10-06T08:00", "end": "2026-10-06T07:00"}', OWNER).startswith("Error")
     assert approvals.pending == {}
 
 
 def test_create_event_only_proposes():
+    tokens.save_token(OWNER, '{"token": "fake"}')
     result = tools.run_tool("create_event", EVENT, OWNER)
     assert result.startswith("NOT DONE YET")
     assert approvals.pending_description(OWNER) == "Create event 'Gym' on Tue 06 Oct, 07:00 AM - 08:00 AM"
-    assert approvals.pending[OWNER]["args"] == {"title": "Gym", "start": "2026-10-06T07:00", "end": "2026-10-06T08:00"}
+    # chat_id travels with the stored action, so the event is created in the
+    # right person's calendar when they approve.
+    assert approvals.pending[OWNER]["args"] == {
+        "chat_id": OWNER, "title": "Gym", "start": "2026-10-06T07:00", "end": "2026-10-06T08:00",
+    }
