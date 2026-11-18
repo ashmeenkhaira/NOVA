@@ -10,8 +10,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 import approvals
 import config
+import google_auth
+import links
 import memory
 import tokens
+import webapp
 from agent import run_agent
 
 # Keep only the last 20 messages of each chat. Every message in the history is
@@ -46,20 +49,34 @@ async def connect(update, context):
         )
         return
 
-    # Signing in needs a browser on the machine running the code, so for now
-    # the owner links accounts from their own laptop. A hosted sign-in page
-    # would let people connect from their own device.
+    # Without a Web application client there is no page for Google to send
+    # people back to, so fall back to the owner linking accounts by hand.
+    if not google_auth.web_linking_available():
+        await update.message.reply_text(
+            "No Google account is linked to this chat yet.\n\n"
+            f"Your chat id is {chat_id}.\n\n"
+            "Send that id to the bot's owner, who links it by running:\n"
+            f"python google_auth.py {chat_id}"
+        )
+        return
+
+    state = links.create(chat_id)
     await update.message.reply_text(
-        "No Google account is linked to this chat yet.\n\n"
-        f"Your chat id is {chat_id}.\n\n"
-        "Send that id to the bot's owner, who links it by running:\n"
-        f"python google_auth.py {chat_id}"
+        "Tap to link your Google account:\n\n"
+        f"{google_auth.build_auth_url(state)}\n\n"
+        "You will be asked to allow:\n"
+        "- reading and adding calendar events\n"
+        "- reading your email and saving drafts (never sending)\n\n"
+        "The link works once and expires in 10 minutes. "
+        "Send /disconnect at any time to remove the access.",
+        disable_web_page_preview=True,
     )
 
 
 async def disconnect(update, context):
     """Runs on /disconnect: forget this chat's Google account."""
     chat_id = update.effective_chat.id
+    links.cancel(chat_id)   # also drop any half-finished sign-in link
 
     if tokens.delete_token(chat_id):
         await update.message.reply_text(
@@ -188,6 +205,13 @@ def main():
     app.add_handler(CommandHandler("forget", forget))
     app.add_handler(CommandHandler("connect", connect))
     app.add_handler(CommandHandler("disconnect", disconnect))
+
+    # The callback server runs in a thread beside the bot, so Google can hand
+    # back the sign-in of anyone who taps a /connect link.
+    if google_auth.web_linking_available():
+        webapp.start_in_background()
+    else:
+        print("[debug] no credentials_web.json - /connect will ask the owner to link by hand")
 
     print("Bot is running. Message it on Telegram. Press Ctrl+C to stop.")
     app.run_polling()

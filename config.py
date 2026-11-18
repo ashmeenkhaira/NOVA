@@ -35,6 +35,18 @@ def require(name):
     return value
 
 
+def optional(name, default):
+    """Return a setting, or the default if it is missing or still a placeholder.
+
+    Used for features that are nice to have rather than required, so the bot
+    still runs on a .env written before the feature existed.
+    """
+    value = os.environ.get(name)
+    if not value or value.startswith("your-"):
+        return default
+    return value
+
+
 GROQ_API_KEY = require("GROQ_API_KEY")
 TELEGRAM_BOT_TOKEN = require("TELEGRAM_BOT_TOKEN")
 
@@ -46,3 +58,19 @@ except ValueError:
 
 # Path to the Google OAuth client file, relative to the project folder.
 GOOGLE_CREDENTIALS_FILE = Path(__file__).parent / require("GOOGLE_CREDENTIALS_FILE")
+
+# --- Letting other people link their own Google account (optional) ----------
+# A second OAuth client, of type "Web application", because a Desktop client
+# cannot redirect to a public address. If this file is absent the feature is
+# simply off and /connect falls back to manual linking by the owner.
+GOOGLE_WEB_CREDENTIALS_FILE = Path(__file__).parent / optional(
+    "GOOGLE_WEB_CREDENTIALS_FILE", "credentials_web.json"
+)
+
+# The address Google sends people back to. http://localhost works for testing
+# on your own machine; a public deployment needs an https address.
+PUBLIC_BASE_URL = optional("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
+
+# The port the callback server listens on. Behind a reverse proxy this stays
+# a plain local port while the proxy handles https on 443.
+OAUTH_PORT = int(optional("OAUTH_PORT", "8000"))

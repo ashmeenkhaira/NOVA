@@ -41,8 +41,11 @@ def temp_database(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_pending_approvals():
-    """Every test starts with no waiting write actions."""
+    """Every test starts with no waiting write actions and no open sign-in links."""
     import approvals
+    import links
     approvals.pending.clear()
+    links.pending.clear()
     yield
     approvals.pending.clear()
+    links.pending.clear()

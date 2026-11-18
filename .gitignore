@@ -4,6 +4,7 @@
 # Google OAuth files: the app's credentials (downloaded from Google Cloud)
 # and the saved login token (created on first sign-in)
 credentials.json
+credentials_web.json
 token.json
 
 # The virtual environment - anyone can rebuild it with: py -m venv venv
@@ -17,3 +18,6 @@ __pycache__/
 
 # Databases - they will hold personal details about you
 *.db
+
+# Personal interview prep - not for the public repo
+study/

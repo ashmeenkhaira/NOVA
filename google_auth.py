@@ -16,7 +16,7 @@ from pathlib import Path
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 
 import config
 import tokens
@@ -37,8 +37,64 @@ SCOPES = [
 LEGACY_TOKEN_FILE = Path(__file__).parent / "token.json"
 
 
+# Where Google sends people back to after they approve. Must match a redirect
+# URI registered on the Web application client in Google Cloud Console.
+CALLBACK_PATH = "/connected"
+
+# Google often hands back a slightly different scope list than was asked for -
+# a different order, or extras like "openid" it adds on its own. The oauthlib
+# library treats any difference as an error and refuses the token.
+#
+# Relaxing that check is safe here because we do the check properly ourselves:
+# get_credentials() below compares the scopes Google actually GRANTED against
+# the ones we need, and throws the token away if any are missing.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
+
 class NotConnected(Exception):
     """This chat has no usable Google account - it needs to connect one."""
+
+
+# --- Linking from the user's own device -------------------------------------
+# Needs a second OAuth client of type "Web application". A Desktop client can
+# only redirect to localhost, which is useless for someone on their own phone.
+
+def web_linking_available():
+    """True if the Web application client file is present, so /connect can send a link."""
+    return config.GOOGLE_WEB_CREDENTIALS_FILE.exists()
+
+
+def _web_flow(state=None):
+    """The OAuth conversation with Google, for the hosted sign-in flow."""
+    return Flow.from_client_secrets_file(
+        str(config.GOOGLE_WEB_CREDENTIALS_FILE),
+        scopes=SCOPES,
+        redirect_uri=config.PUBLIC_BASE_URL + CALLBACK_PATH,
+        state=state,
+    )
+
+
+def build_auth_url(state):
+    """The Google sign-in URL to send to a user who wants to link their account."""
+    url, _ = _web_flow(state).authorization_url(
+        # Without this Google grants an hour of access and no way to renew it.
+        access_type="offline",
+        # Force the consent screen, so a returning user still gets a refresh
+        # token instead of Google silently skipping it.
+        prompt="consent",
+    )
+    return url
+
+
+def exchange_code(state, code):
+    """Swap the one-time code Google sent back for real credentials.
+
+    The code is useless on its own: exchanging it also requires the client
+    secret, which only this server holds.
+    """
+    flow = _web_flow(state)
+    flow.fetch_token(code=code)
+    return flow.credentials
 
 
 def _import_legacy_token(chat_id):
