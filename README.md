@@ -16,8 +16,9 @@ with no agent framework. Everything runs on free services.
 | "Any unread emails from today?" | searches Gmail and reads emails |
 | "Draft a reply saying I'll be late" | saves a draft in Gmail. It never sends. |
 
-Telegram commands: `/memories` lists stored facts, `/forget <n>` deletes one, and
-`/reset` clears the conversation.
+Telegram commands: `/connect` links a Google account to the chat and `/disconnect`
+unlinks it, `/memories` lists stored facts, `/forget <n>` deletes one, and `/reset`
+clears the conversation.
 
 ## How it works
 
@@ -32,6 +33,9 @@ Telegram ──▶ bot.py ──▶ agent.py: run_agent()  ◀── the agent l
                                            ──▶ ddgs (web search)
                                            ──▶ approvals.py (write actions wait for "yes")
 
+/connect ──▶ links.py (single-use state) ──▶ Google ──▶ webapp.py (callback)
+                                                         └─▶ tokens.py (one token per chat)
+
 mcp_server.py ──▶ the same tools.py registry, served over MCP to other agents
 ```
 
@@ -42,6 +46,11 @@ mcp_server.py ──▶ the same tools.py registry, served over MCP to other age
 - **Memory:** short-term memory is the per-chat history, trimmed to 20 messages.
   Long-term memory is facts in SQLite, saved by the model itself through
   `remember_fact` and loaded into the system prompt on every message.
+- **Linking a Google account** (`links.py`, `webapp.py`, `tokens.py`): `/connect` mints a
+  random single-use `state` that expires in 10 minutes and sends back a Google sign-in
+  link. Google redirects to a small callback server, which checks the `state` to learn
+  which chat asked, swaps the code for a token, and stores it against that chat. Each
+  chat therefore uses its own Google account.
 - **MCP** (`mcp_server.py`): the same registry is exposed as an MCP server, so
   Claude Code or any MCP client can use NOVA's tools.
 
@@ -59,14 +68,17 @@ instructions in a prompt:
 - **The model never chooses whose data it touches.** `chat_id` comes from Telegram
   and is injected by `run_tool`. If the model supplies its own `chat_id`, it is
   overwritten.
-- **Owner-only tools:** calendar and Gmail tools refuse every chat except the owner's.
+- **Access follows the linked account, not ownership.** Every calendar and Gmail tool acts as
+  the Google account linked to the asking chat, and refuses any chat that has linked none.
+  Owning the bot grants no access to anyone else's data, and the owner is not special either.
 - **Prompt-injection defence in layers:** email content is labelled as untrusted
   third-party text, and anything an injected instruction could trigger still needs
   your `yes`. In testing, a planted instruction in an email was ignored.
 - **Least privilege:** `gmail.readonly` for reading, and drafts are never sent
   (there is no send code path). Calendar scope is limited to events.
 - **Secrets never reach git:** keys live in `.env`, loaded by `config.py`.
-  `credentials.json`, `token.json` and `*.db` are all in `.gitignore`.
+  `credentials.json`, `credentials_web.json`, `token.json` and `*.db` are all in
+  `.gitignore`.
 
 ## Project layout
 
@@ -77,11 +89,14 @@ instructions in a prompt:
 | `tools.py` | tool functions and the registry |
 | `approvals.py` | the confirmation step for write actions |
 | `memory.py` | SQLite store of facts per chat |
-| `google_auth.py` | one Google OAuth sign-in for all Google services |
+| `tokens.py` | SQLite store of one Google token per chat |
+| `google_auth.py` | Google OAuth: scopes, token refresh, both sign-in flows |
+| `links.py` | single-use, expiring `state` values for `/connect` |
+| `webapp.py` | the callback page Google redirects to after sign-in |
 | `gcal.py` / `gmail.py` | Google Calendar and Gmail API calls |
 | `mcp_server.py` | the tools as an MCP server |
 | `config.py` | loads and validates `.env` |
-| `tests/` | 33 offline tests (`python -m pytest`) |
+| `tests/` | 54 offline tests (`python -m pytest`) |
 | `deploy/` | systemd service and VM guide |
 
 ## Setup (Windows, PowerShell)
@@ -104,8 +119,15 @@ External / Testing, and add yourself as a test user. Create a **Desktop app**
 client, download its JSON as `credentials.json` into this folder, then sign in once:
 
 ```powershell
-python google_auth.py
+python google_auth.py             # links the owner's chat
+python google_auth.py 5551234     # links someone else's chat id, by hand
 ```
+
+**Letting other people link their own account (optional):** `/connect` needs a second
+OAuth client, of type **Web application**, because a Desktop client can only redirect to
+`localhost`. Register `<your public address>/connected` as its redirect URI, save its JSON
+as `credentials_web.json`, and set `PUBLIC_BASE_URL` in `.env`. Without that file the
+feature is simply off, and `/connect` falls back to asking the owner to link by hand.
 
 ## Running
 
@@ -132,6 +154,10 @@ waiting for a browser.
 - Google sign-in expires every 7 days while the Cloud app is in Testing mode.
 - Every saved fact is sent with every message. This is fine for hundreds of facts;
   beyond that, it needs semantic search (embeddings).
-- Conversation history and pending approvals are held in memory, so a restart
-  clears them. Facts are kept on disk.
+- Conversation history, pending approvals and half-finished `/connect` links are held in
+  memory, so a restart clears them. Facts and Google tokens are kept on disk.
+- Google tokens are stored as plain text, like the facts. That is acceptable while only the
+  owner connects, on a machine only they can reach; the column needs encrypting before
+  other people link their own accounts from their own devices.
+- Only one write action can wait for approval per chat at a time, and it never expires.
 - Text only: there are no voice notes.
